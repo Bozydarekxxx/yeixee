@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Prompter - Ekran Zespołu</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { 
+            font-family: system-ui, -apple-system, sans-serif; 
+            padding: 20px; 
+            background: #09090b; 
+            margin: 0; 
+            color: #f4f4f5; 
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        .header-box {
+            background: #18181b;
+            border: 1px solid #27272a;
+            padding: 15px 20px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+        }
+
+        #titleView { 
+            font-size: 2rem; 
+            font-weight: 800; 
+            color: #38bdf8; 
+            margin: 0 0 5px 0; 
+        }
+        
+        #notesView { 
+            font-size: 1.2rem; 
+            color: #fbbf24; 
+            margin: 0; 
+            font-style: italic; 
+        }
+
+        /* Kontener główny tekstów z przewijaniem i obsługą kliknięcia */
+        .lyrics-container {
+            flex: 1;
+            background: #121214;
+            border: 1px solid #27272a;
+            border-radius: 12px;
+            padding: 20px;
+            overflow-y: auto;
+            cursor: pointer;
+            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            gap: 15px; /* Odstępy pomiędzy boxami zwrotek */
+        }
+
+        /* Styl pojedynczego boxa (karty) na tekst */
+        .lyric-box {
+            background: #1c1c21;
+            border: 1px solid #2e2e38;
+            border-left: 4px solid #38bdf8;
+            padding: 15px 20px;
+            border-radius: 8px;
+            font-size: 1.5rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            transition: border-color 0.2s;
+        }
+
+        .lyric-box:hover {
+            border-color: #38bdf8;
+        }
+
+        .placeholder-text {
+            color: #71717a;
+            text-align: center;
+            margin-top: 20vh;
+            font-size: 1.5rem;
+            font-style: italic;
+        }
+
+        .scroll-hint-view {
+            text-align: center;
+            font-size: 12px;
+            color: #52525b;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-box">
+        <h1 id="titleView">Oczekiwanie na utwór...</h1>
+        <p id="notesView" style="display: none;"></p>
+    </div>
+
+    <!-- Klikalny kontener z boxami tekstowymi -->
+    <div class="lyrics-container" id="lyricsScrollBox" onclick="scrollLyricsStep()">
+        <div id="lyricsView" class="placeholder-text">Wybierz utwór w panelu administratora i wyślij na ekrany.</div>
+    </div>
+
+    <div class="scroll-hint-view">💡 Kliknij w dowolne miejsce poniżej, aby płynnie przewijać tekst (na końcu wraca na górę)</div>
+
+    <script>
+        const socket = io();
+
+        // Funkcja przewijająca ekran zespołu z powrotem na górę po dotarciu do końca
+        function scrollLyricsStep() {
+            const box = document.getElementById('lyricsScrollBox');
+            const currentScroll = box.scrollTop;
+            
+            box.scrollBy({ top: 200, behavior: 'smooth' });
+            
+            setTimeout(() => {
+                if (box.scrollTop === currentScroll) {
+                    box.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            }, 200);
+        }
+
+        socket.on('updateView', (data) => {
+            document.getElementById('titleView').textContent = data.title;
+            
+            const notesEl = document.getElementById('notesView');
+            if (data.notes && data.notes.trim() !== '') {
+                notesEl.textContent = "Uwagi: " + data.notes;
+                notesEl.style.display = 'block';
+            } else {
+                notesEl.textContent = '';
+                notesEl.style.display = 'none';
+            }
+
+            const lyricsContainer = document.getElementById('lyricsView');
+            lyricsContainer.classList.remove('placeholder-text');
+            lyricsContainer.innerHTML = '';
+
+            // Dzielimy tekst po pustych liniach na osobne bloki (zwrotki/refreny) i tworzymy dla nich boxy
+            if (data.lyrics) {
+                const blocks = data.lyrics.split(/\n\s*\n/);
+                
+                blocks.forEach(block => {
+                    if (block.trim() !== '') {
+                        const lyricBox = document.createElement('div');
+                        lyricBox.className = 'lyric-box';
+                        lyricBox.textContent = block.trim();
+                        lyricsContainer.appendChild(lyricBox);
+                    }
+                });
+            }
+
+            // Reset scrolla na samą górę przy zmianie utworu
+            document.getElementById('lyricsScrollBox').scrollTop = 0;
+        });
+    </script>
+</body>
+</html>

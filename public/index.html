@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Podgórzanie</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; padding: 10px; background: #000000; margin: 0; color: #e0e0e0; }
+        .card { background: #121212; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #222; }
+        .header-panel { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; color: #fff; }
+        
+        input, textarea, select { width: 100%; margin-bottom: 10px; padding: 10px; box-sizing: border-box; border: 1px solid #333; background: #1e1e1e; color: #fff; border-radius: 4px; font-size: 15px; }
+        input:focus, textarea:focus, select:focus { border-color: #3498db; outline: none; }
+        
+        button { 
+            padding: 8px 14px; 
+            font-weight: 600; 
+            background: #2c3e50; 
+            color: white; 
+            border: none; 
+            cursor: pointer; 
+            border-radius: 4px; 
+            width: auto; 
+            font-size: 13px;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.85; }
+
+        button.live { background: #e74c3c; width: 100%; font-size: 15px; padding: 12px; } 
+        button.action { background: #27ae60; } 
+        button.danger { background: #c0392b; }
+        button.secondary { background: #4a5568; }
+        button.queue { background: #f39c12; color: #000; }
+        button.saved-set { background: #8e44ad; }
+
+        .btn-group { display: flex; gap: 6px; width: auto; margin-top: 4px; flex-wrap: wrap; }
+        .btn-group button { flex: none; margin: 0; }
+
+        .tabs { display: flex; gap: 5px; margin-bottom: 15px; background: #121212; padding: 4px; border-radius: 6px; border: 1px solid #222; }
+        .tab-btn { flex: 1; padding: 10px; background: transparent; color: #888; border: none; font-weight: bold; border-radius: 4px; cursor: pointer; text-align: center; }
+        .tab-btn.active { background: #2c3e50; color: #fff; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .song-item { border-bottom: 1px solid #222; padding: 10px 0; display: flex; flex-direction: column; gap: 4px; }
+        .song-item:last-child { border-bottom: none; }
+        .song-item h4 { margin: 0; font-size: 16px; color: #fff; }
+        
+        .played { opacity: 0.4; }
+        .played h4 { text-decoration: line-through; }
+
+        .control-panel { border: 2px solid #e74c3c; background: #1a0f0f; }
+        .status-box { padding: 8px 12px; background: #121212; border-radius: 4px; margin-bottom: 8px; font-size: 13px; border: 1px solid #333; color: #ccc; }
+        .status-box span { font-weight: bold; color: #e74c3c; }
+
+        #customModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-box { background: #18181b; border: 1px solid #3f3f46; padding: 20px; border-radius: 8px; width: 90%; max-width: 320px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }
+        .modal-msg { font-size: 16px; color: #fff; margin-bottom: 20px; }
+        .modal-buttons { display: flex; justify-content: center; gap: 10px; }
+        .modal-buttons button { min-width: 80px; padding: 10px; font-size: 14px; }
+
+        #adminTitleView { font-size: 1.5rem; font-weight: bold; color: #3498db; margin-bottom: 5px; }
+        #adminNotesView { font-size: 1.1rem; color: #f39c12; margin-bottom: 10px; font-style: italic; }
+        .lyrics-scroll-container {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #333;
+            background: #18181b;
+            padding: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        #adminLyricsView { font-size: 1.3rem; white-space: pre-wrap; line-height: 1.4; color: #e0e0e0; }
+        .scroll-hint { font-size: 12px; color: #777; margin-top: 6px; text-align: right; }
+
+        .search-container { position: relative; }
+        .search-results {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 99;
+            display: none;
+        }
+        .search-result-item {
+            padding: 10px;
+            cursor: pointer;
+            border-bottom: 1px solid #222;
+            font-size: 14px;
+            color: #fff;
+        }
+        .search-result-item:hover {
+            background: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div id="customModal">
+        <div class="modal-box">
+            <div id="modalMessage" class="modal-msg">Treść komunikatu</div>
+            <div class="modal-buttons">
+                <button class="action" id="modalYesBtn">Tak</button>
+                <button class="danger" id="modalNoBtn">Nie</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="header-panel">
+        <h2 style="margin:0; font-size: 1.2rem;">Podgórzanie</h2>
+        <a href="/view" target="_blank" style="color: #3498db; font-weight: bold; text-decoration: none; font-size: 14px;">Otwórz Ekran ↗</a>
+    </div>
+
+    <div class="card control-panel">
+        <h3 style="margin-top:0; color: #e74c3c; font-size: 1rem;">Transmisja</h3>
+        <div class="status-box">Na ekranach: <span id="liveTitle">Brak</span></div>
+        <div class="status-box">Wstrzymana/Szykowana: <span id="queuedTitle" style="color: #f39c12;">Wybierz z aktywnej setlisty...</span></div>
+        <button id="goLiveBtn" class="live" onclick="sendQueuedToLive()" disabled>WYŚLIJ DO WSZYSTKICH (WZNÓW)</button>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('setlist')">Setlisty</button>
+        <button class="tab-btn" onclick="switchTab('lyrics')">Tekst</button>
+        <button class="tab-btn" onclick="switchTab('database')">Baza Piosenek</button>
+    </div>
+
+    <div id="tab-setlist" class="tab-content active">
+        <div class="card" style="border-color: #8e44ad;">
+            <h3 style="margin-top:0; font-size: 1rem; color: #fff;">Gotowe Setlisty</h3>
+            <div id="mainPlaylistsContainer" style="color: #aaa; font-size: 14px;">Brak zapisanych setlist.</div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0; font-size: 1rem; color: #fff;">Aktywna Setlista: <span id="activeSetNameDisplay" style="color: #3498db;">(Brak)</span></h3>
+            <div style="margin-bottom: 10px; display: flex; gap: 6px; flex-wrap: wrap;">
+                <button class="secondary" onclick="resetPlayedStatus()" style="font-size: 11px; padding: 6px 10px;">Odznacz zagrane</button>
+                <button class="danger" onclick="clearSetlist()" style="font-size: 11px; padding: 6px 10px;">Wyczyść setlistę</button>
+            </div>
+            <div id="setlistView" style="color: #aaa;">Brak utworów w setliście.</div>
+        </div>
+    </div>
+
+    <div id="tab-lyrics" class="tab-content">
+        <div class="card">
+            <h3 style="margin-top:0; font-size: 1rem; color: #fff;">Podgląd tekstu na żywo</h3>
+            
+            <div style="margin-bottom: 10px;">
+                <label style="font-size: 12px; color: #aaa; display: block; margin-bottom: 4px;">Wybierz aktywną setlistę:</label>
+                <select id="lyricsSetSelector" onchange="onLyricsSetSelectChange(this.value)">
+                    <option value="">(Brak aktywnej setlisty)</option>
+                </select>
+            </div>
+
+            <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+                <button class="secondary" onclick="navigateActiveSetlist(-1)" style="flex:1;">← Poprzednia piosenka</button>
+                <button class="secondary" onclick="navigateActiveSetlist(1)" style="flex:1;">Następna piosenka →</button>
+            </div>
+            <div id="adminTitleView">Brak wybranego utworu</div>
+            <div id="adminNotesView"></div>
+            <hr style="border: 0; border-top: 1px solid #333; margin: 10px 0;">
+            <div class="lyrics-scroll-container" id="lyricsScrollBox" onclick="scrollLyricsStep()">
+                <div id="adminLyricsView" style="color: #888;">Tekst utworu pojawi się tutaj po kliknięciu "Przygotuj" lub wysłaniu na ekrany.</div>
+            </div>
+            <div class="scroll-hint">💡 Kliknij w pole tekstu, aby przewinąć w dół</div>
+        </div>
+    </div>
+
+    <div id="tab-database" class="tab-content">
+        <div class="card">
+            <h3 style="margin-top:0; font-size: 1rem; color: #fff;" id="formTitle">Dodaj nowy utwór do bazy</h3>
+            <input type="hidden" id="songIndex" value="-1">
+            <input type="text" id="songTitle" placeholder="Tytuł utworu">
+            <input type="text" id="songNotes" placeholder="Dodatki (np. Zaczyna trąbka)">
+            <textarea id="songLyrics" rows="6" placeholder="Tekst utworu..."></textarea>
+            <div class="btn-group">
+                <button class="action" onclick="saveSong()">Zapisz w bazie</button>
+                <button class="secondary" onclick="clearForm()">Wyczyść</button>
+            </div>
+        </div>
+
+        <div class="card" style="border-color: #27ae60;">
+            <h3 style="margin-top:0; font-size: 1rem; color: #fff;">Dodaj do Aktywnej Setlisty</h3>
+            <div class="search-container">
+                <input type="text" id="songSearchInput" placeholder="Wpisz tytuł piosenki, aby wyszukać..." autocomplete="off" oninput="filterAvailableSongs()" onfocus="filterAvailableSongs()">
+                <div id="searchResultsDropdown" class="search-results"></div>
+            </div>
+        </div>
+
+        <div class="card" style="border-color: #2980b9;">
+            <h3 style="margin-top:0; font-size: 1rem; color: #fff;">Utwory w Aktywnej Setliście <span id="dbActiveSetNameDisplay" style="color: #3498db; font-weight: normal;">(Brak)</span></h3>
+            <div id="dbActiveSetlistView" style="color: #aaa;">Brak utworów w aktywnej setliście.</div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0; font-size: 1rem; color: #fff;">Zarządzaj Gotowymi Szablonami Setlist</h3>
+            <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+                <input type="text" id="newSetName" placeholder="Nazwa nowej setlisty (np. Koncert 2026)" style="margin-bottom:0;">
+                <button class="saved-set" onclick="saveCurrentAsTemplate()">Zapisz obecną</button>
+            </div>
+            <div id="savedSetsList" style="color: #aaa; font-size: 14px;">Brak zapisanych szablonów.</div>
+        </div>
+
+        <div class="card" style="border-color: #8e44ad;">
+            <h3 style="margin-top:0; font-size: 1rem; color: #fff;">Wszystkie piosenki w bazie (Status w setliście)</h3>
+            <div id="songList" style="color: #aaa;">Brak piosenek.</div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0; font-size: 1rem; color: #fff;">Kopia zapasowa systemu (Backup)</h3>
+            <div class="btn-group">
+                <button onclick="exportJSON()">Pobierz pełną kopię (JSON)</button>
+                <button class="secondary" onclick="document.getElementById('importFile').click()">Wczytaj kopię (JSON)</button>
+            </div>
+            <input type="file" id="importFile" accept=".json" onchange="importJSON(event)" style="display:none;">
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        
+        let songs = JSON.parse(localStorage.getItem('bandSongs')) || [];
+        let setlistIds = JSON.parse(localStorage.getItem('bandSetlistIds')) || [];
+        let playedIds = JSON.parse(localStorage.getItem('bandPlayedIds')) || [];
+        let savedSets = JSON.parse(localStorage.getItem('bandSavedSets')) || {};
+        let activeSetName = localStorage.getItem('bandActiveSetName') || '';
+        let queuedSong = null;
+        let currentAdminSongId = null;
+
+        songs.forEach((song, idx) => {
+            if (!song.id) {
+                song.id = 'legacy_' + idx + '_' + Date.now();
+            }
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.search-container')) {
+                const dropdown = document.getElementById('searchResultsDropdown');
+                if (dropdown) dropdown.style.display = 'none';
+            }
+        });
+
+        function scrollLyricsStep() {
+            const box = document.getElementById('lyricsScrollBox');
+            const currentScroll = box.scrollTop;
+            box.scrollBy({ top: 150, behavior: 'smooth' });
+            setTimeout(() => {
+                if (box.scrollTop === currentScroll) {
+                    box.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            }, 200);
+        }
+
+        function showConfirm(message, onYes, isAlertOnly = false) {
+            const modal = document.getElementById('customModal');
+            const msgEl = document.getElementById('modalMessage');
+            const yesBtn = document.getElementById('modalYesBtn');
+            const noBtn = document.getElementById('modalNoBtn');
+
+            msgEl.textContent = message;
+            modal.style.display = 'flex';
+
+            if (isAlertOnly) {
+                noBtn.style.display = 'none';
+                yesBtn.textContent = 'OK';
+            } else {
+                noBtn.style.display = 'inline-block';
+                yesBtn.textContent = 'Tak';
+            }
+
+            const newYesBtn = yesBtn.cloneNode(true);
+            const newNoBtn = noBtn.cloneNode(true);
+            yesBtn.parentNode.replaceChild(newYesBtn, yesBtn);
+            noBtn.parentNode.replaceChild(newNoBtn, noBtn);
+
+            newYesBtn.addEventListener('click', () => {
+                modal.style.display = 'none';
+                if (onYes) onYes();
+            });
+
+            newNoBtn.addEventListener('click', () => {
+                modal.style.display = 'none';
+            });
+        }
+
+        function saveState() {
+            localStorage.setItem('bandSongs', JSON.stringify(songs));
+            localStorage.setItem('bandSetlistIds', JSON.stringify(setlistIds));
+            localStorage.setItem('bandPlayedIds', JSON.stringify(playedIds));
+            localStorage.setItem('bandSavedSets', JSON.stringify(savedSets));
+            localStorage.setItem('bandActiveSetName', activeSetName);
+        }
+
+        function updateActiveSetNameDisplay() {
+            const displayEl = document.getElementById('activeSetNameDisplay');
+            const dbDisplayEl = document.getElementById('dbActiveSetNameDisplay');
+            const nameText = (activeSetName && activeSetName.trim() !== '') ? `(${activeSetName})` : '(Brak)';
+            displayEl.textContent = nameText;
+            dbDisplayEl.textContent = nameText;
+
+            const selector = document.getElementById('lyricsSetSelector');
+            if (selector) {
+                selector.innerHTML = '<option value="">(Brak aktywnej setlisty)</option>';
+                Object.keys(savedSets).forEach(setName => {
+                    const opt = document.createElement('option');
+                    opt.value = setName;
+                    opt.textContent = setName;
+                    if (setName === activeSetName) {
+                        opt.selected = true;
+                    }
+                    selector.appendChild(opt);
+                });
+            }
+        }
+
+        function onLyricsSetSelectChange(setName) {
+            if (!setName) {
+                setlistIds = [];
+                activeSetName = '';
+                saveState();
+                renderAll();
+                return;
+            }
+            if (savedSets[setName]) {
+                setlistIds = [...savedSets[setName]];
+                activeSetName = setName;
+                saveState();
+                renderAll();
+            }
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            
+            if (tabName === 'setlist') {
+                document.getElementById('tab-setlist').classList.add('active');
+                document.querySelectorAll('.tab-btn')[0].classList.add('active');
+            } else if (tabName === 'lyrics') {
+                document.getElementById('tab-lyrics').classList.add('active');
+                document.querySelectorAll('.tab-btn')[1].classList.add('active');
+            } else {
+                document.getElementById('tab-database').classList.add('active');
+                document.querySelectorAll('.tab-btn')[2].classList.add('active');
+            }
+        }
+
+        function saveCurrentAsTemplate() {
+            const name = document.getElementById('newSetName').value.trim();
+            if (!name) {
+                showConfirm("Podaj nazwę dla tej setlisty!", null, true);
+                return;
+            }
+            if (setlistIds.length === 0) {
+                showConfirm("Aktualna setlista jest pusta, nie ma czego zapisać.", null, true);
+                return;
+            }
+
+            savedSets[name] = [...setlistIds];
+            activeSetName = name;
+            saveState();
+            document.getElementById('newSetName').value = "";
+            renderAll();
+        }
+
+        function loadTemplate(name) {
+            if (savedSets[name]) {
+                setlistIds = [...savedSets[name]];
+                activeSetName = name;
+                saveState();
+                renderAll();
+            }
+        }
+
+        function deleteTemplate(name) {
+            showConfirm(`Usunąć szablon setlisty "${name}"?`, () => {
+                delete savedSets[name];
+                if (activeSetName === name) {
+                    activeSetName = '';
+                }
+                saveState();
+                renderAll();
+            });
+        }
+
+        function renderSavedSets() {
+            const container = document.getElementById('savedSetsList');
+            const keys = Object.keys(savedSets);
+            
+            if (keys.length === 0) {
+                container.innerHTML = 'Brak zapisanych szablonów.';
+                return;
+            }
+
+            container.innerHTML = '';
+            keys.forEach(setName => {
+                const count = savedSets[setName].length;
+                const div = document.createElement('div');
+                div.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: #1e1e1e; padding: 8px 12px; margin-bottom: 6px; border-radius: 4px; border: 1px solid #333;";
+                div.innerHTML = `
+                    <div><strong>${setName}</strong> <span style="font-size: 12px; color: #888;">(${count} utw.)</span></div>
+                    <div class="btn-group"></div>
+                `;
+                const btnGroup = div.querySelector('.btn-group');
+                
+                const btnLoad = document.createElement('button');
+                btnLoad.className = 'action';
+                btnLoad.textContent = 'Wczytaj';
+                btnLoad.onclick = () => loadTemplate(setName);
+                
+                const btnDel = document.createElement('button');
+                btnDel.className = 'danger';
+                btnDel.textContent = 'Usuń';
+                btnDel.onclick = () => deleteTemplate(setName);
+
+                btnGroup.appendChild(btnLoad);
+                btnGroup.appendChild(btnDel);
+                container.appendChild(div);
+            });
+        }
+
+        function renderMainPlaylists() {
+            const container = document.getElementById('mainPlaylistsContainer');
+            const keys = Object.keys(savedSets);
+
+            if (keys.length === 0) {
+                container.innerHTML = 'Brak zapisanych setlist.';
+                return;
+            }
+
+            container.innerHTML = '';
+            keys.forEach(setName => {
+                const songIds = savedSets[setName];
+                const isActive = (activeSetName === setName);
+                
+                const wrapper = document.createElement('div');
+                wrapper.style.cssText = `background: ${isActive ? '#1a2e3b' : '#1e1e1e'}; border: 1px solid ${isActive ? '#3498db' : '#333'}; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;`;
+
+                wrapper.innerHTML = `
+                    <div>
+                        <strong style="font-size: 15px; color: #fff;">${setName}</strong> 
+                        <span style="font-size: 12px; color: #888; margin-left: 6px;">(${songIds.length} utw.)</span> 
+                        ${isActive ? '<span style="color: #3498db; font-size: 12px; margin-left: 6px; font-weight: bold;">● Aktywna</span>' : ''}
+                    </div>
+                    <div class="btn-group" style="margin-top:0;"></div>
+                `;
+                const btnGroup = wrapper.querySelector('.btn-group');
+
+                const btnLoad = document.createElement('button');
+                btnLoad.className = 'action';
+                btnLoad.textContent = 'Wybierz do gry';
+                btnLoad.onclick = () => loadTemplate(setName);
+
+                const btnDel = document.createElement('button');
+                btnDel.className = 'danger';
+                btnDel.textContent = 'Usuń';
+                btnDel.onclick = () => deleteTemplate(setName);
+
+                btnGroup.appendChild(btnLoad);
+                btnGroup.appendChild(btnDel);
+                container.appendChild(wrapper);
+            });
+        }
+
+        function saveSong() {
+            const index = parseInt(document.getElementById('songIndex').value, 10);
+            const title = document.getElementById('songTitle').value.trim();
+            const notes = document.getElementById('songNotes').value;
+            const lyrics = document.getElementById('songLyrics').value;
+
+            if (!title) {
+                showConfirm("Podaj tytuł!", null, true);
+                return;
+            }
+
+            if (index > -1 && songs[index]) {
+                songs[index].title = title;
+                songs[index].notes = notes;
+                songs[index].lyrics = lyrics;
+            } else {
+                const newId = Date.now().toString();
+                songs.push({ id: newId, title, notes, lyrics });
+            }
+
+            saveState();
+            clearForm();
+            renderAll();
+        }
+
+        function clearForm() {
+            document.getElementById('songIndex').value = '-1';
+            document.getElementById('songTitle').value = '';
+            document.getElementById('songNotes').value = '';
+            document.getElementById('songLyrics').value = '';
+            document.getElementById('formTitle').textContent = 'Dodaj nowy utwór do bazy';
+        }
+
+        function deleteSong(id) {
+            showConfirm("Usunąć z bazy?", () => {
+                songs = songs.filter(s => s.id !== id);
+                setlistIds = setlistIds.filter(item => item !== id);
+                Object.keys(savedSets).forEach(setName => {
+                    savedSets[setName] = savedSets[setName].filter(item => item !== id);
+                });
+                saveState();
+                renderAll();
+            });
+        }
+
+        function editSong(id) {
+            const index = songs.findIndex(s => s.id === id);
+            if (index > -1) {
+                const song = songs[index];
+                document.getElementById('songIndex').value = index;
+                document.getElementById('songTitle').value = song.title;
+                document.getElementById('songNotes').value = song.notes || '';
+                document.getElementById('songLyrics').value = song.lyrics || '';
+                document.getElementById('formTitle').textContent = 'Edytuj utwór: ' + song.title;
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+
+        function addToSetlist(id) {
+            if (!setlistIds.includes(id)) {
+                setlistIds.push(id);
+                saveState();
+                renderAll();
+            }
+            const searchInput = document.getElementById('songSearchInput');
+            const dropdown = document.getElementById('searchResultsDropdown');
+            if (searchInput) searchInput.value = '';
+            if (dropdown) dropdown.style.display = 'none';
+        }
+
+        function removeFromSetlist(itemIdentifier) {
+            setlistIds = setlistIds.filter(item => item !== itemIdentifier);
+            saveState();
+            renderAll();
+        }
+
+        function moveInSetlist(index, direction) {
+            if (index + direction < 0 || index + direction >= setlistIds.length) return;
+            const temp = setlistIds[index];
+            setlistIds[index] = setlistIds[index + direction];
+            setlistIds[index + direction] = temp;
+            saveState();
+            renderAll();
+        }
+
+        function clearSetlist() {
+            showConfirm("Wyczyścić aktywną setlistę?", () => {
+                setlistIds = [];
+                activeSetName = '';
+                saveState();
+                renderAll();
+            });
+        }
+
+        function queueSong(identifier) {
+            const song = songs.find(s => s.id === identifier);
+            if (song) {
+                currentAdminSongId = song.id;
+                queuedSong = song;
+                document.getElementById('queuedTitle').textContent = song.title;
+                document.getElementById('goLiveBtn').disabled = false;
+                
+                document.getElementById('lyricsScrollBox').scrollTop = 0;
+
+                document.getElementById('adminTitleView').textContent = song.title;
+                const adminNotes = document.getElementById('adminNotesView');
+                if (song.notes && song.notes.trim() !== '') {
+                    adminNotes.textContent = "Uwagi: " + song.notes;
+                    adminNotes.style.display = 'block';
+                } else {
+                    adminNotes.textContent = '';
+                    adminNotes.style.display = 'none';
+                }
+                const adminLyrics = document.getElementById('adminLyricsView');
+                adminLyrics.textContent = song.lyrics;
+                adminLyrics.style.color = '#e0e0e0';
+
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+
+        // NAWIGACJA Z POWIADOMIENIEM NA SAMYM POCZĄTKU PRZEŁĄCZANIA NA OSTATNI UTWÓR
+        function navigateActiveSetlist(direction) {
+            if (setlistIds.length === 0) {
+                showConfirm("Aktywna setlista jest pusta.", null, true);
+                return;
+            }
+
+            const unplayed = setlistIds.filter(id => !playedIds.includes(id));
+
+            if (unplayed.length === 0) {
+                showConfirm("Wszystkie utwory w setliście zostały już zagrane.", null, true);
+                return;
+            }
+
+            let currentIndex = setlistIds.findIndex(item => item === currentAdminSongId);
+            
+            if (currentIndex === -1) {
+                queueSong(unplayed[0]);
+                checkIfLastUnplayed(unplayed[0]);
+                return;
+            }
+
+            let nextIndex = currentIndex;
+            let steps = 0;
+            
+            while (steps < setlistIds.length) {
+                nextIndex += direction;
+                
+                if (nextIndex >= setlistIds.length) {
+                    nextIndex = 0;
+                } else if (nextIndex < 0) {
+                    nextIndex = setlistIds.length - 1;
+                }
+
+                const targetId = setlistIds[nextIndex];
+
+                if (!playedIds.includes(targetId)) {
+                    queueSong(targetId);
+                    checkIfLastUnplayed(targetId);
+                    return;
+                }
+
+                steps++;
+            }
+        }
+
+        // Pomocnicza funkcja sprawdzająca czy przełączony utwór jest ostatnim niezagranym
+        function checkIfLastUnplayed(targetId) {
+            const currentUnplayed = setlistIds.filter(id => !playedIds.includes(id));
+            if (currentUnplayed.length === 1 && currentUnplayed[0] === targetId) {
+                showConfirm("To ostatni utwór w setliście!", null, true);
+            }
+        }
+
+        function sendQueuedToLive() {
+            if (!queuedSong) return;
+            socket.emit('sendToView', { 
+                title: queuedSong.title, 
+                notes: queuedSong.notes, 
+                lyrics: queuedSong.lyrics 
+            });
+
+            if (!playedIds.includes(queuedSong.id)) {
+                playedIds.push(queuedSong.id);
+                saveState();
+            }
+
+            document.getElementById('liveTitle').textContent = queuedSong.title;
+            queuedSong = null;
+            document.getElementById('queuedTitle').textContent = "Wybierz z aktywnej setlisty...";
+            document.getElementById('goLiveBtn').disabled = true;
+            renderAll();
+        }
+
+        function resetPlayedStatus() {
+            showConfirm("Odznacz zagrane utwory?", () => {
+                playedIds = [];
+                saveState();
+                renderAll();
+            });
+        }
+
+        function exportJSON() {
+            const backupData = {
+                songs: songs,
+                setlistIds: setlistIds,
+                playedIds: playedIds,
+                savedSets: savedSets,
+                activeSetName: activeSetName
+            };
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+            const dl = document.createElement('a');
+            dl.setAttribute("href", dataStr);
+            dl.setAttribute("download", "podgorzanie_pelny_backup.json");
+            dl.click();
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (imported && typeof imported === 'object') {
+                        showConfirm("Wczytanie pełnej kopii zapasowej zastąpi aktualny stan. Kontynuować?", () => {
+                            if (Array.isArray(imported.songs)) songs = imported.songs;
+                            if (Array.isArray(imported.setlistIds)) setlistIds = imported.setlistIds;
+                            if (Array.isArray(imported.playedIds)) playedIds = imported.playedIds;
+                            if (imported.savedSets && typeof imported.savedSets === 'object') savedSets = imported.savedSets;
+                            if (typeof imported.activeSetName === 'string') activeSetName = imported.activeSetName;
+
+                            saveState();
+                            renderAll();
+                            showConfirm("Backup wczytany pomyślnie!", null, true);
+                        });
+                    }
+                } catch (err) {
+                    showConfirm("Błąd odczytu pliku JSON.", null, true);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function renderAll() {
+            renderBazaWithStatus();
+            renderDbActiveSetlist();
+            renderSetlist();
+            renderSavedSets();
+            renderMainPlaylists();
+            updateActiveSetNameDisplay();
+            filterAvailableSongs();
+        }
+
+        function filterAvailableSongs() {
+            const searchInput = document.getElementById('songSearchInput');
+            const dropdown = document.getElementById('searchResultsDropdown');
+            if (!searchInput || !dropdown) return;
+
+            const query = searchInput.value.toLowerCase().trim();
+            dropdown.innerHTML = '';
+
+            const usedSongIdentifiers = new Set([...setlistIds]);
+            Object.values(savedSets).forEach(arr => {
+                arr.forEach(id => usedSongIdentifiers.add(id));
+            });
+
+            const available = songs.filter(song => !usedSongIdentifiers.has(song.id));
+            const filtered = available.filter(song => song.title.toLowerCase().includes(query));
+
+            if (filtered.length === 0) {
+                dropdown.style.display = 'none';
+                return;
+            }
+
+            filtered.forEach(song => {
+                const item = document.createElement('div');
+                item.className = 'search-result-item';
+                item.textContent = song.title;
+                item.onclick = function() {
+                    addToSetlist(song.id);
+                };
+                dropdown.appendChild(item);
+            });
+
+            dropdown.style.display = 'block';
+        }
+
+        function renderDbActiveSetlist() {
+            const list = document.getElementById('dbActiveSetlistView');
+            list.innerHTML = '';
+            if (setlistIds.length === 0) {
+                list.innerHTML = 'Brak utworów w aktywnej setliście.';
+                return;
+            }
+
+            setlistIds.forEach((id) => {
+                const song = songs.find(s => s.id === id);
+                if (!song) return;
+
+                const div = document.createElement('div');
+                div.className = 'song-item';
+                div.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <h4 style="margin:0;">${song.title} ${song.notes ? '<span style="color:#f39c12; font-weight:normal; font-size:13px;">(' + song.notes + ')</span>' : ''}</h4>
+                        <button class="danger remove-btn" style="padding: 4px 8px; font-size: 11px;">Usuń z setlisty</button>
+                    </div>
+                `;
+                div.querySelector('.remove-btn').addEventListener('click', () => removeFromSetlist(song.id));
+                list.appendChild(div);
+            });
+        }
+
+        function renderBazaWithStatus() {
+            const list = document.getElementById('songList');
+            list.innerHTML = '';
+            if (songs.length === 0) return list.innerHTML = 'Brak piosenek w bazie.';
+
+            songs.forEach(song => {
+                let assignedSetName = null;
+
+                if (setlistIds.includes(song.id)) {
+                    assignedSetName = (activeSetName && activeSetName.trim() !== '') ? `Aktualna: ${activeSetName}` : 'Aktualna setlista';
+                } else {
+                    for (const [setName, ids] of Object.entries(savedSets)) {
+                        if (ids.includes(song.id)) {
+                            assignedSetName = `Szablon: ${setName}`;
+                            break;
+                        }
+                    }
+                }
+
+                const isInAnySet = assignedSetName !== null;
+
+                const div = document.createElement('div');
+                div.className = 'song-item';
+                div.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <h4 style="margin:0;">${song.title} ${song.notes ? '<span style="color:#f39c12; font-weight:normal; font-size:13px;">(' + song.notes + ')</span>' : ''}</h4>
+                        <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: bold; background: ${isInAnySet ? '#1b4d3e' : '#333'}; color: ${isInAnySet ? '#2ecc71' : '#888'};">
+                            ${isInAnySet ? '✓ W setliście: ' + assignedSetName : '• Poza setlistą'}
+                        </span>
+                    </div>
+                    <div class="btn-group">
+                        <button class="edit-btn">Edytuj</button>
+                        <button class="danger delete-btn">Usuń</button>
+                    </div>
+                `;
+                
+                div.querySelector('.edit-btn').addEventListener('click', () => editSong(song.id));
+                div.querySelector('.delete-btn').addEventListener('click', () => deleteSong(song.id));
+
+                list.appendChild(div);
+            });
+        }
+
+        function renderSetlist() {
+            const list = document.getElementById('setlistView');
+            list.innerHTML = str = '';
+            if (setlistIds.length === 0) return list.innerHTML = 'Brak utworów w setliście.';
+
+            setlistIds.forEach((id, index) => {
+                const song = songs.find(s => s.id === id);
+                if (!song) return;
+
+                const isPlayed = playedIds.includes(song.id);
+
+                const div = document.createElement('div');
+                div.className = `song-item ${isPlayed ? 'played' : ''}`;
+                div.innerHTML = `
+                    <h4 style="margin:0;">${song.title} ${song.notes ? '<span style="color:#f39c12; font-weight:normal; font-size:13px;">(' + song.notes + ')</span>' : ''} ${isPlayed ? '(Zagrane)' : ''}</h4>
+                    <div class="btn-group">
+                        <button class="queue queue-btn">🎵 Przygotuj</button>
+                        <button class="secondary up-btn">↑</button>
+                        <button class="secondary down-btn">↓</button>
+                        <button class="danger remove-btn">X</button>
+                    </div>
+                `;
+
+                div.querySelector('.queue-btn').addEventListener('click', () => queueSong(song.id));
+                div.querySelector('.up-btn').addEventListener('click', () => moveInSetlist(index, -1));
+                div.querySelector('.down-btn').addEventListener('click', () => moveInSetlist(index, 1));
+                div.querySelector('.remove-btn').addEventListener('click', () => removeFromSetlist(song.id));
+
+                list.appendChild(div);
+            });
+        }
+
+        renderAll();
+    </script>
+</body>
+</html>
